@@ -1,3 +1,6 @@
+pip install google-api-python-client yt-dlp pydub
+git clone https://git.ffmpeg.org/ffmpeg.git ffmpeg
+
 import os
 import logging
 import subprocess
