@@ -1,9 +1,10 @@
-pip install google-api-python-client yt-dlp pydub
+pip install google-api-python-client yt-dlp pydub flask
 git clone https://git.ffmpeg.org/ffmpeg.git ffmpeg
 
 import os
 import logging
 import subprocess
+from flask import Flask, request, send_file, jsonify
 from googleapiclient.discovery import build
 import yt_dlp as youtube_dl
 from pydub import AudioSegment
@@ -13,6 +14,8 @@ logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %
 
 # Define your API key here
 API_KEY = 'AIzaSyA10ghIFZhoQlf3tSN44LPvCdvpkcSFsKw'
+
+app = Flask(__name__)
 
 def search_youtube(query, api_key, max_results=1):
     youtube = build('youtube', 'v3', developerKey=api_key)
@@ -37,70 +40,43 @@ def download_youtube_video(url, output_path):
 
 def convert_audio_to_mp3(input_path, output_path):
     audio_format = input_path.split('.')[-1]
-    try:
-        audio = AudioSegment.from_file(input_path, format=audio_format)
-        audio.export(output_path, format='mp3')
-    except Exception as e:
-        logging.error(f"Error during conversion: {e}")
-        raise
+    audio = AudioSegment.from_file(input_path, format=audio_format)
+    audio.export(output_path, format='mp3')
 
-def hide_file(file_path):
-    try:
-        subprocess.run(['attrib', '+H', file_path], check=True)
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Error hiding file: {e}")
-
-def display_progress(message):
-    # Simple progress indicator
-    print(message, end='', flush=True)
-
-def main():
-    # Get user input
-    song = input("Lied: ")
-    artist = input("Artist: ")
+@app.route('/download', methods=['GET'])
+def download():
+    song = request.args.get('song')
+    artist = request.args.get('artist', '')
 
     query = f"{song} {artist} lyrics" if artist else f"{song} lyrics"
     search_results = search_youtube(query, API_KEY)
 
     if not search_results:
-        print("No results found.")
-        return
+        return jsonify({'error': 'No results found.'}), 404
 
     video_id = search_results[0]['id']['videoId']
     video_url = f"https://www.youtube.com/watch?v={video_id}"
 
     # Define file paths
-    download_dir = r'C:\Users\juebe\Standard-Ordner\Downloads'
-    temp_audio_path = os.path.join(download_dir, 'temp_audio.webm')
+    temp_audio_path = 'temp_audio.webm'
     
-    # Format MP3 filename based on whether artist is provided
-    if artist:
-        mp3_filename = f"{song} - {artist}.mp3"
-    else:
-        mp3_filename = f"{song}.mp3"
-    
-    mp3_path = os.path.join(download_dir, mp3_filename)
+    # Format MP3 filename
+    mp3_filename = f"{song} - {artist}.mp3" if artist else f"{song}.mp3"
+    mp3_path = mp3_filename
 
-    display_progress(f"Downloading video from: {video_url}... ")
-    download_youtube_video(video_url, temp_audio_path)
-
-    if not os.path.exists(temp_audio_path):
-        print(f"\nFailed to download audio. File not found: {temp_audio_path}")
-        return
-
-    # Hide the temporary audio file
-    hide_file(temp_audio_path)
-
-    display_progress("Converting audio to MP3... ")
     try:
+        download_youtube_video(video_url, temp_audio_path)
         convert_audio_to_mp3(temp_audio_path, mp3_path)
-        print(f"\nDownloaded and converted to MP3: {mp3_path}")
-    except Exception as e:
-        print(f"\nError during conversion: {e}")
 
-    # Clean up
-    if os.path.exists(temp_audio_path):
-        os.remove(temp_audio_path)
+        # Clean up the temporary audio file
+        if os.path.exists(temp_audio_path):
+            os.remove(temp_audio_path)
+
+        return send_file(mp3_path, as_attachment=True)
+
+    except Exception as e:
+        logging.error(f"Error: {e}")
+        return jsonify({'error': 'An error occurred during processing.'}), 500
 
 if __name__ == '__main__':
-    main()
+    app.run(debug=True)
